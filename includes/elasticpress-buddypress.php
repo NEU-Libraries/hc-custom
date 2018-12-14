@@ -63,8 +63,8 @@ function hcommons_add_terms_to_search_query( WP_Query $query ) {
 					[
 						'taxonomies' => [
 							'mla_academic_interests',
-							'humcore_deposit_subject',
-							'humcore_deposit_tag',
+//							'humcore_deposit_subject',
+//							'humcore_deposit_tag',
 						],
 					]
 				), SORT_REGULAR
@@ -160,7 +160,7 @@ function hcommons_filter_ep_post_sync_kill( bool $kill, array $post_args, int $p
 	}
 	return $kill;
 }
-add_filter( 'ep_post_sync_kill', 'hcommons_filter_ep_post_sync_kill', 10, 3 );
+//add_filter( 'ep_post_sync_kill', 'hcommons_filter_ep_post_sync_kill', 10, 3 );
 
 // Hide some networks & post types from search facets.
 add_filter( 'ep_bp_show_network_facet_6', '__return_false' ); // UP.
@@ -170,6 +170,7 @@ add_filter( 'ep_bp_show_post_type_facet_attachment', '__return_false' );
 add_filter( 'ep_bp_show_post_type_facet_forum', '__return_false' );
 add_filter( 'ep_bp_show_post_type_facet_bp_doc', '__return_false' );
 add_filter( 'ep_bp_show_post_type_facet_event', '__return_false' );
+add_filter( 'ep_bp_show_post_type_facet_location', '__return_false' );
 add_filter( 'ep_bp_show_post_type_facet_bp_docs_folder', '__return_false' );
 
 /**
@@ -200,7 +201,7 @@ function hcommons_filter_ep_bp_fallback_post_type_facet_selection( $post_types )
 		]
 	);
 }
-add_filter( 'ep_bp_fallback_post_type_facet_selection', 'hcommons_filter_ep_bp_fallback_post_type_facet_selection' );
+//add_filter( 'ep_bp_fallback_post_type_facet_selection', 'hcommons_filter_ep_bp_fallback_post_type_facet_selection' );
 
 /**
  * Make deposits indexable.
@@ -209,13 +210,17 @@ add_filter( 'ep_bp_fallback_post_type_facet_selection', 'hcommons_filter_ep_bp_f
  * @return array
  */
 function hcommons_filter_ep_indexable_post_types( $post_types ) {
-	return array_unique(
-		array_merge(
-			$post_types, [
-				'humcore_deposit' => 'humcore_deposit',
-			]
-		)
-	);
+	unset( $post_types['fl-builder-template'] );
+	unset( $post_types['location'] );
+	
+	return $post_types;
+//	return array_unique(
+//		array_merge(
+//			$post_types, [
+//				'humcore_deposit' => 'humcore_deposit',
+//			]
+//		)
+//	);
 }
 add_filter( 'ep_indexable_post_types', 'hcommons_filter_ep_indexable_post_types' );
 
