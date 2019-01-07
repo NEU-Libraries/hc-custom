@@ -44,3 +44,4 @@ require_once trailingslashit( __DIR__ ) . 'includes/wp-to-twitter.php';
  * Miscellaneous actions & filters.
  */
 require_once trailingslashit( __DIR__ ) . 'includes/mla-groups.php';
+require_once trailingslashit( __DIR__ ) . 'includes/northeastern-social-signon.php';
