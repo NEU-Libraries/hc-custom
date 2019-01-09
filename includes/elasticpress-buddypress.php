@@ -22,7 +22,32 @@ function hcommons_filter_ep_prepare_meta_allowed_protected_keys( array $keys = [
 
 	return $keys;
 }
-add_filter( 'ep_prepare_meta_allowed_protected_keys', 'hcommons_filter_ep_prepare_meta_allowed_protected_keys', 10, 2 );
+//add_filter( 'ep_prepare_meta_allowed_protected_keys', 'hcommons_filter_ep_prepare_meta_allowed_protected_keys', 10, 2 );
+
+/**
+ * Add member data to Elasticsearch
+ *
+ * @param $meta
+ * @param $user
+ *
+ * @return array
+ * @author Tanner Moushey
+ */
+function hcommons_ep_bp_member_meta( $meta, $user ) {
+	$return = [];
+
+	foreach( $meta as $key => $value ) {
+		if ( 'personal_interests' == $key ) {
+			foreach( $value as $interest_id ) {
+				$term        = get_term( $interest_id );
+				$return[ $key ][] = $term->name;
+			}
+		}
+	}
+
+	return $return;
+}
+add_filter( 'ep_bp_user_meta', 'hcommons_ep_bp_member_meta', 10, 2 );
 
 /**
  * Ensure $post->permalink is used rather than the_permalink() to handle cross-network results.
