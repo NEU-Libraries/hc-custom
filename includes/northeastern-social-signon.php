@@ -283,7 +283,7 @@ http://wordpress.org/plugins/wordpress-social-login/
 			 </p>
 			 <form method="post" id="wsl_whitelist_form" action="options-general.php?page=wordpress-social-login&wslp=tools" enctype="multipart/form-data">
 				 <h4>Upload CSV</h4>
-				 <p>Upload a CSV of Google Account Email Addresses or Twitter Usernames to bulk add to the whitelist.</p>
+				 <p>Upload a CSV of Google Account Email Addresses or Twitter Usernames to bulk add to the whitelist. Select if you are whitelisting Twitter usernames or Google Accounts. Format the CSV with the username/email in the first column with no header. All other columns will be ignored.</p>
 				 <select name="csvprovider">
 					 <option value="twitter">Twitter</option>
 					 <option value="google">Google</option>
@@ -370,15 +370,13 @@ function northeastern_wsl_do_whitelist_job() {
 
 		if( isset( $_REQUEST['do'] ) && 'whitelist' === $_REQUEST['do'] ) {
 
-			var_dump( $_REQUEST );
-			var_dump($_FILES);
-
 			// Process Twitter Whitelist Textarea
 			$twitter_text = ( isset( $_REQUEST['whitelist-twitter'] ) && $_REQUEST['whitelist-twitter'] ) ? $_REQUEST['whitelist-twitter'] : null;
 			if ( ! is_null( $twitter_text ) ) {
 				$usernames = preg_split( '/\r\n|\r|\n/', $twitter_text );
 				$usernames = array_unique( $usernames );
 				foreach ( $usernames as $username ) {
+					$username = str_replace( '@', '', $username );
 					northeastern_add_whitelist_entry( 'twitter', sanitize_text_field( $username ) );
 				}
 			}
@@ -397,38 +395,44 @@ function northeastern_wsl_do_whitelist_job() {
 			// Process CSV Upload
 			if ( isset( $_FILES['whitelistcsv'] ) && $_FILES['whitelistcsv'] ) {
 				$files = $_FILES['whitelistcsv'];
-				if ( isset( $files['error'] ) && $files['error'] ) {
-					?>
-					<div class="notice notice-error is-dismissible">
-						<p>Error uploading CSV File</p>
-					</div>
-					<?php
-					return;
-				}
-
-				$open = fopen( $files['tmp_name'], 'r' );
-
-				if ( $open !== false ) {
-
-					while ( ( $data = fgetcsv( $open, 0, ',' ) ) !== false ) {
-						if ( isset( $data[0] ) && $data[0] ) {
-							northeastern_add_whitelist_entry( sanitize_text_field( $_REQUEST['csvprovider'] ), sanitize_text_field( $data[0] ) );
-						}
+				if ( $files['name'] ) {
+					if ( isset( $files['error'] ) && $files['error'] ) {
+						?>
+						<div class="notice notice-error is-dismissible">
+							<p>Error uploading CSV File</p>
+						</div>
+						<?php
+						return;
 					}
 
-				} else {
-					?>
-					<div class="notice notice-error is-dismissible">
-						<p>Error reading CSV File</p>
-					</div>
-					<?php
-					return;
+					$open = fopen( $files['tmp_name'], 'r' );
+
+					if ( $open !== false ) {
+
+						while ( ( $data = fgetcsv( $open, 0, ',' ) ) !== false ) {
+							if ( isset( $data[0] ) && $data[0] ) {
+								$identifier = $data[0];
+								if ( 'twitter' === $_REQUEST['csvprovider'] ) {
+									$identifier = str_replace( '@', '', $data );
+								}
+								northeastern_add_whitelist_entry( sanitize_text_field( $_REQUEST['csvprovider'] ), sanitize_text_field( $identifier ) );
+							}
+						}
+
+					} else {
+						?>
+						<div class="notice notice-error is-dismissible">
+							<p>Error reading CSV File</p>
+						</div>
+						<?php
+						return;
+					}
 				}
 			}
 
 			?>
 			<div class="notice notice-success is-dismissible">
-				<p>Successfully added entries to whitelist!</p>
+				<p>Finished added entries to whitelist!</p>
 			</div>
 			<?php
 			
