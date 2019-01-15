@@ -15,6 +15,7 @@ function northeastern_social_login_init() {
 		add_action( 'wsl_component_tools_sections', 'northeastern_social_login_whitelist_settings' );
 		add_action( 'wsl_component_tools_do_repair', 'northeastern_wsl_do_repair', 5 );
 		add_action( 'wsl_component_tools_start', 'northeastern_wsl_do_whitelist_job' );
+		add_action( 'wsl_process_login_new_users_gateway_start', 'northeastern_wsl_whitelist_check', 10, 3 );
 	}
 }
 add_action( 'init', 'northeastern_social_login_init' );
@@ -362,6 +363,18 @@ function northeastern_add_whitelist_entry( $provider, $identifier ) {
 }
 
 /**
+ * Get a whitelist entry
+ */
+function northeastern_get_whitelist_entry( $provider, $identifier ) {
+	global $wpdb;
+
+	$sql = "SELECT * FROM {$wpdb->prefix}wsl_login_whitelist WHERE provider = %s AND identifier = %s";
+	$entry = $wpdb->get_row( $wpdb->prepare( $sql, $provider, $identifier ) );
+
+	return $entry;
+}
+
+/**
  * Process the whitelist database job
  */
 function northeastern_wsl_do_whitelist_job() {
@@ -440,4 +453,116 @@ function northeastern_wsl_do_whitelist_job() {
 		
 	}
 	
+}
+
+/**
+ * Get Twitter Username from URL
+ */
+function northeastern_get_twitter_username_from_url( $url ) {
+	if ( preg_match( "/^https?:\/\/(www\.)?twitter\.com\/(#!\/)?(?<name>[^\/]+)(\/\w+)*$/", $url, $regs ) ) {
+		return $regs['name'];
+	}
+	return false;
+}
+
+/**
+ * Check the social login against the whitelist
+ */
+function northeastern_wsl_whitelist_check( $provider, $redirect_to, $hybridauth_user_profile ) {
+
+	$provider = strtolower( $provider );
+
+	if ( 'twitter' === $provider ) {
+		$url = $hybridauth_user_profile->profileURL;
+		$identifier = northeastern_get_twitter_username_from_url( $url );
+	} elseif ( 'google' === $provider ) {
+		$identifier = $hybridauth_user_profile->email;
+	} else {
+		$identifier = null;
+	}
+
+	if ( is_null( $identifier ) ) {
+		wp_die( 'Something went wrong here. No provider/username found.' );
+	}
+
+	if ( ! northeastern_get_whitelist_entry( $provider, $identifier ) ) {
+		?>
+		<!DOCTYPE html>
+			<head>
+				<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+				<title><?php echo get_bloginfo('name'); ?></title>
+				<style type="text/css">
+					html, body {
+						height: 100%;
+						margin: 0;
+						padding: 0;
+					}
+					body {
+						background: none repeat scroll 0 0 #f1f1f1;
+						font-size: 14px;
+						color: #444;
+						font-family: "Open Sans",sans-serif;
+					}
+					hr {
+						border-color: #eeeeee;
+						border-style: none none solid;
+						border-width: 0 0 1px;
+						margin: 2px 0 0;
+					}
+					h4 {
+						font-size: 14px;
+						margin-bottom: 10px;
+					}
+					#login {
+						width: 616px;
+						margin: auto;
+						padding: 114px 0 0;
+					}
+					#login-panel {
+						background: none repeat scroll 0 0 #fff;
+						box-shadow: 0 1px 3px rgba(0, 0, 0, 0.13);
+						margin: 2em auto;
+						box-sizing: border-box;
+						display: inline-block;
+						padding: 70px 0 15px;
+						position: relative;
+						text-align: center;
+						width: 100%;
+					}
+					.back-to-home {
+						font-size: 12px;
+						margin-top: -18px;
+					}
+					.back-to-home a {
+						color: #999;
+						text-decoration: none;
+					}
+				</style>
+
+			</head>
+			<body>
+				<div id="login">
+					<div id="login-panel">
+						<h4>Access Denied</h4>
+						<hr />
+						<p>Sorry, this account is not authorized to access the network. Please contact the administrator if you think you should have access.</p>
+					</div>
+
+					<p class="back-to-home">
+						<a href="<?php echo home_url(); ?>">&#8592; <?php printf( _wsl__( "Back to %s", 'wordpress-social-login' ), get_bloginfo('name') ); ?></a>
+					</p>
+				</div>
+
+				<?php
+				// Development mode on?
+				if( get_option( 'wsl_settings_development_mode_enabled' ) )
+				{
+					wsl_display_dev_mode_debugging_area();
+				}
+				?>
+			</body>
+		</html>
+		<?php
+	}
+
 }
