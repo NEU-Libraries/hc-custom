@@ -4,6 +4,24 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+/**
+ * Runs actions on init
+ */
+function northeastern_social_login_init() {
+	if ( function_exists( 'wsl_register_components' ) ) {
+		remove_action( 'login_form', 'shibboleth_login_form' );
+		remove_action( 'login_form', 'wsl_render_auth_widget_in_wp_login_form' );
+		add_action( 'login_form', 'northeastern_render_social_login' );
+		add_action( 'wsl_component_tools_sections', 'northeastern_social_login_whitelist_settings' );
+		add_action( 'wsl_component_tools_do_repair', 'northeastern_wsl_do_repair', 5 );
+		add_action( 'wsl_component_tools_start', 'northeastern_wsl_do_whitelist_job' );
+	}
+}
+add_action( 'init', 'northeastern_social_login_init' );
+
+/**
+ * Renders the social buttons on the login page
+ */
 function northeastern_render_social_login() {
 	$args = array(
 
@@ -250,12 +268,172 @@ http://wordpress.org/plugins/wordpress-social-login/
 	echo ob_get_clean();
 }
 
-function northeastern_social_login_init() {
-	if ( function_exists( 'wsl_register_components' ) ) {
-		remove_action( 'login_form', 'shibboleth_login_form' );
-		remove_action( 'login_form', 'wsl_render_auth_widget_in_wp_login_form' );
-		add_action( 'login_form', 'northeastern_render_social_login' );
-	}
-}
-add_action( 'init', 'northeastern_social_login_init' );
+/**
+ * Adds a section to the social login plugin settings for whitelist
+ */
+ function northeastern_social_login_whitelist_settings() {
+	 ?>
+	 <div class="stuffbox">
+		 <h3>
+			 <label><?php _wsl_e("User Account Whitelist", 'northeastern') ?></label>
+		 </h3>
+		 <div class="inside">
+			 <p>
+				 <?php _wsl_e('This will allow you to whitelist social accounts that are able to create accounts on the website.', 'wordpress-social-login') ?>.
+			 </p>
+			 <form method="post" id="wsl_whitelist_form" action="options-general.php?page=wordpress-social-login&wslp=tools" enctype="multipart/form-data">
+				 <h4>Upload CSV</h4>
+				 <p>Upload a CSV of Google Account Email Addresses or Twitter Usernames to bulk add to the whitelist.</p>
+				 <select name="csvprovider">
+					 <option value="twitter">Twitter</option>
+					 <option value="google">Google</option>
+				 </select>
+				 <br>
+				 <input type="file"
+				        id="whitelistcsv" name="whitelistcsv"
+				        accept="text/csv">
+				 <br><br>
+				 <h4>Add Twitter Whitelist Entries</h4>
+				 <p>Add one username per line. Do not use @ signs on the twitter username.</p>
+				 <textarea id="whitelist-twitter" name="whitelist-twitter" rows="10" cols="50"></textarea>
+				 <br>
 
+				 <br><br>
+				 <h4>Add Google Whitelist Entries</h4>
+				 <p>Add one email per line.</p>
+				 <textarea id="whitelist-entries" name="whitelist-google" rows="10" cols="50"></textarea>
+				 <br>
+				 <input type="hidden" name="do" value="whitelist" />
+				 <?php wp_nonce_field(); ?>
+
+				 <input type="submit" class="button-primary" value="Add To Whitelist" />
+			 </form>
+		 </div>
+	 </div>
+	 <?php
+ }
+
+/**
+ * Create the database table for the whitelist
+ */
+function northeastern_create_whitelist_db_table() {
+	global $wpdb;
+	$charset_collate = $wpdb->get_charset_collate();
+
+	$sql = "CREATE TABLE `{$wpdb->prefix}wsl_login_whitelist` (
+	  id int(11) NOT NULL AUTO_INCREMENT,
+	  provider varchar(50) NOT NULL,
+	  identifier varchar(255) NOT NULL,
+	  UNIQUE KEY id (id),
+	  KEY provider (provider)
+	) $charset_collate;";
+
+	require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+	dbDelta($sql);
+}
+
+/**
+ * Hook into the wsl repair action to create db table
+ */
+function northeastern_wsl_do_repair() {
+
+	northeastern_create_whitelist_db_table();
+
+}
+
+/**
+ * Add a whiltelist entry to the database
+ */
+function northeastern_add_whitelist_entry( $provider, $identifier ) {
+	global $wpdb;
+
+	$wpdb->insert(
+		$wpdb->prefix . 'wsl_login_whitelist',
+		array(
+			'provider'   => $provider,
+			'identifier' => $identifier,
+		),
+		array(
+			'%s',
+			'%s',
+		)
+
+	);
+}
+
+/**
+ * Process the whitelist database job
+ */
+function northeastern_wsl_do_whitelist_job() {
+
+	if( isset( $_REQUEST['_wpnonce'] ) && wp_verify_nonce( $_REQUEST['_wpnonce'] ) ) {
+
+		if( isset( $_REQUEST['do'] ) && 'whitelist' === $_REQUEST['do'] ) {
+
+			var_dump( $_REQUEST );
+			var_dump($_FILES);
+
+			// Process Twitter Whitelist Textarea
+			$twitter_text = ( isset( $_REQUEST['whitelist-twitter'] ) && $_REQUEST['whitelist-twitter'] ) ? $_REQUEST['whitelist-twitter'] : null;
+			if ( ! is_null( $twitter_text ) ) {
+				$usernames = preg_split( '/\r\n|\r|\n/', $twitter_text );
+				$usernames = array_unique( $usernames );
+				foreach ( $usernames as $username ) {
+					northeastern_add_whitelist_entry( 'twitter', sanitize_text_field( $username ) );
+				}
+			}
+
+			// Process Google Whitelist Textarea
+			$google_text = ( isset( $_REQUEST['whitelist-google'] ) && $_REQUEST['whitelist-google'] ) ? $_REQUEST['whitelist-google'] : null;
+			if ( ! is_null( $google_text ) ) {
+				$emails = preg_split( '/\r\n|\r|\n/', $google_text );
+				$emails = array_unique( $emails );
+				foreach ( $emails as $email ) {
+					northeastern_add_whitelist_entry( 'google', sanitize_text_field( $email ) );
+				}
+			}
+
+
+			// Process CSV Upload
+			if ( isset( $_FILES['whitelistcsv'] ) && $_FILES['whitelistcsv'] ) {
+				$files = $_FILES['whitelistcsv'];
+				if ( isset( $files['error'] ) && $files['error'] ) {
+					?>
+					<div class="notice notice-error is-dismissible">
+						<p>Error uploading CSV File</p>
+					</div>
+					<?php
+					return;
+				}
+
+				$open = fopen( $files['tmp_name'], 'r' );
+
+				if ( $open !== false ) {
+
+					while ( ( $data = fgetcsv( $open, 0, ',' ) ) !== false ) {
+						if ( isset( $data[0] ) && $data[0] ) {
+							northeastern_add_whitelist_entry( sanitize_text_field( $_REQUEST['csvprovider'] ), sanitize_text_field( $data[0] ) );
+						}
+					}
+
+				} else {
+					?>
+					<div class="notice notice-error is-dismissible">
+						<p>Error reading CSV File</p>
+					</div>
+					<?php
+					return;
+				}
+			}
+
+			?>
+			<div class="notice notice-success is-dismissible">
+				<p>Successfully added entries to whitelist!</p>
+			</div>
+			<?php
+			
+		}
+		
+	}
+	
+}
