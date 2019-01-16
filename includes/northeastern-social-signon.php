@@ -11,14 +11,21 @@ function northeastern_social_login_init() {
 	if ( function_exists( 'wsl_register_components' ) ) {
 		remove_action( 'login_form', 'shibboleth_login_form' );
 		remove_action( 'login_form', 'wsl_render_auth_widget_in_wp_login_form' );
-		add_action( 'login_form', 'northeastern_render_social_login' );
 		add_action( 'wsl_component_tools_sections', 'northeastern_social_login_whitelist_settings' );
 		add_action( 'wsl_component_tools_do_repair', 'northeastern_wsl_do_repair', 5 );
 		add_action( 'wsl_component_tools_start', 'northeastern_wsl_do_whitelist_job' );
 		add_action( 'wsl_process_login_new_users_gateway_start', 'northeastern_wsl_whitelist_check', 10, 3 );
+		add_filter( 'login_message', 'northeastern_add_wsl_login_buttons' );
 	}
 }
 add_action( 'init', 'northeastern_social_login_init' );
+
+/**
+ * Adds the social login buttons above the login form
+ */
+function northeastern_add_wsl_login_buttons( $message ) {
+	return $message . northeastern_render_social_login();
+}
 
 /**
  * Renders the social buttons on the login page
@@ -158,8 +165,8 @@ http://wordpress.org/plugins/wordpress-social-login/
 		<div class="wp-social-login-connect-with">Login with:</div>
 
 		<div class="wp-social-login-provider-list">
-			<a rel="nofollow" href="<?php echo add_query_arg( 'action', 'shibboleth', wp_login_url() ); ?>" title="Login with Northeastern University Universal Login" class="wp-social-login-provider wp-social-login-provider-shibboleth" data-provider="shibboleth">
-				<img alt="shibboleth" title="Login with Northeastern University Universal Login" src="" />
+			<a rel="nofollow" href="<?php echo add_query_arg( 'action', 'shibboleth', wp_login_url() ); ?>" title="Login with MyNEU" class="wp-social-login-provider wp-social-login-provider-shibboleth" data-provider="shibboleth">
+				<img alt="shibboleth" title="Login with MyNEU" src="" />
 			</a>
 			<?php
 			// Widget::Authentication display
@@ -266,7 +273,7 @@ http://wordpress.org/plugins/wordpress-social-login/
 	// Display WSL debugging area bellow the widget.
 	// wsl_display_dev_mode_debugging_area(); // ! keep this line commented unless you know what you are doing :)
 
-	echo ob_get_clean();
+	return ob_get_clean();
 }
 
 /**
