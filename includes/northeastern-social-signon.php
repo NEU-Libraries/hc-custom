@@ -161,8 +161,8 @@ class NEU_Social_Signon {
 		<script>
           jQuery('#shibboleth_login').find('a').text('Northeastern University Login');
 
-          if (jQuery('#nsl-custom-login-form-main').length) {
-            jQuery('#nsl-custom-login-form-main').prepend(jQuery('#shibboleth_login'));
+          if (jQuery('#nsl-custom-login-form-main .nsl-container').length) {
+            jQuery('#nsl-custom-login-form-main .nsl-container').prepend(jQuery('#shibboleth_login'));
           }
 		</script>
 		<?php
