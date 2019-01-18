@@ -4,565 +4,169 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-/**
- * Runs actions on init
- */
-function northeastern_social_login_init() {
-	if ( function_exists( 'wsl_register_components' ) ) {
-		remove_action( 'login_form', 'shibboleth_login_form' );
-		remove_action( 'login_form', 'wsl_render_auth_widget_in_wp_login_form' );
-		add_action( 'login_form', 'northeastern_render_social_login' );
-		add_action( 'wsl_component_tools_sections', 'northeastern_social_login_whitelist_settings' );
-		add_action( 'wsl_component_tools_do_repair', 'northeastern_wsl_do_repair', 5 );
-		add_action( 'wsl_component_tools_start', 'northeastern_wsl_do_whitelist_job' );
-		add_action( 'wsl_process_login_new_users_gateway_start', 'northeastern_wsl_whitelist_check', 10, 3 );
-	}
-}
-add_action( 'init', 'northeastern_social_login_init' );
+class NEU_Social_Signon {
+	/**
+	 * Holds the values to be used in the fields callbacks
+	 */
+	private $options;
 
-/**
- * Renders the social buttons on the login page
- */
-function northeastern_render_social_login() {
-	$args = array(
+	/**
+	 * Start up
+	 */
+	public function __construct() {
+		add_action( 'admin_menu', array( $this, 'add_plugin_page' ) );
+		add_action( 'admin_init', array( $this, 'page_init' ) );
+		add_action( 'login_footer', array( $this, 'social_login_footer' ) );
+		add_filter( 'nsl_is_register_allowed', [ $this, 'check_social_whitelist' ], 10, 2 );
 
-	);
-
-	$auth_mode = isset( $args['mode'] ) && $args['mode'] ? $args['mode'] : 'login';
-
-	// validate auth-mode
-	if( ! in_array( $auth_mode, array( 'login', 'link', 'test' ) ) )
-	{
-		return;
+		$this->options = get_option( 'neu_social' );
 	}
 
-	// auth-mode eq 'login' => display wsl widget only for NON logged in users
-	// > this is the default mode of wsl widget.
-	if( $auth_mode == 'login' && is_user_logged_in() )
-	{
-		return;
+	/**
+	 * Add options page
+	 */
+	public function add_plugin_page() {
+		// This page will be under "Settings"
+		add_options_page(
+			'NEU Social Whitelist',
+			'NEU Whitelist',
+			'manage_options',
+			'neu-social-whitelist',
+			array( $this, 'create_admin_page' )
+		);
 	}
 
-	// auth-mode eq 'link' => display wsl widget only for LOGGED IN users
-	// > this will allows users to manually link other social network accounts to their WordPress account
-	if( $auth_mode == 'link' && ! is_user_logged_in() )
-	{
-		return;
-	}
-
-	// auth-mode eq 'test' => display wsl widget only for LOGGED IN users only on dashboard
-	// > used in Authentication Playground on WSL admin dashboard
-	if( $auth_mode == 'test' && ! is_user_logged_in() && ! is_admin() )
-	{
-		return;
-	}
-
-	// Bouncer :: Allow authentication?
-	if( get_option( 'wsl_settings_bouncer_authentication_enabled' ) == 2 )
-	{
-		return;
-	}
-
-	// HOOKABLE: This action runs just before generating the WSL Widget.
-	do_action( 'wsl_render_auth_widget_start' );
-
-	GLOBAL $WORDPRESS_SOCIAL_LOGIN_PROVIDERS_CONFIG;
-
-	ob_start();
-
-	// Icon set. If eq 'none', we show text instead
-	$social_icon_set = get_option( 'wsl_settings_social_icon_set' );
-
-	// wpzoom icons set, is shown by default
-	if( empty( $social_icon_set ) )
-	{
-		$social_icon_set = "wpzoom/";
-	}
-
-	$assets_base_url  = WORDPRESS_SOCIAL_LOGIN_PLUGIN_URL . 'assets/img/32x32/' . $social_icon_set . '/';
-
-	$assets_base_url  = isset( $args['assets_base_url'] ) && $args['assets_base_url'] ? $args['assets_base_url'] : $assets_base_url;
-
-	// HOOKABLE:
-	$assets_base_url = apply_filters( 'wsl_render_auth_widget_alter_assets_base_url', $assets_base_url );
-
-	// get the current page url, which we will use to redirect the user to,
-	// unless Widget::Force redirection is set to 'yes', then this will be ignored and Widget::Redirect URL will be used instead
-	$redirect_to = wsl_get_current_url();
-
-	// Use the provided redirect_to if it is given and this is the login page.
-	if ( in_array( $GLOBALS["pagenow"], array( "wp-login.php", "wp-register.php" ) ) && !empty( $_REQUEST["redirect_to"] ) )
-	{
-		$redirect_to = $_REQUEST["redirect_to"];
-	}
-
-	// build the authentication url which will call for wsl_process_login() : action=wordpress_social_authenticate
-	$authenticate_base_url = site_url( 'wp-login.php', 'login_post' )
-	                         . ( strpos( site_url( 'wp-login.php', 'login_post' ), '?' ) ? '&' : '?' )
-	                         . "action=wordpress_social_authenticate&mode=login&";
-
-	// if not in mode login, we overwrite the auth base url
-	// > admin auth playground
-	if( $auth_mode == 'test' )
-	{
-		$authenticate_base_url = home_url() . "/?action=wordpress_social_authenticate&mode=test&";
-	}
-
-	// > account linking
-	elseif( $auth_mode == 'link' )
-	{
-		$authenticate_base_url = home_url() . "/?action=wordpress_social_authenticate&mode=link&";
-	}
-
-	// Connect with caption
-	$connect_with_label = _wsl__( get_option( 'wsl_settings_connect_with_label' ), 'wordpress-social-login' );
-
-	$connect_with_label = isset( $args['caption'] ) ? $args['caption'] : $connect_with_label;
-
-	// HOOKABLE:
-	$connect_with_label = apply_filters( 'wsl_render_auth_widget_alter_connect_with_label', $connect_with_label );
-	?>
-
-	<!--
-wsl_render_auth_widget
-WordPress Social Login <?php echo wsl_get_version(); ?>.
-http://wordpress.org/plugins/wordpress-social-login/
--->
-	<?php
-	// Widget::Custom CSS
-	$widget_css = get_option( 'wsl_settings_authentication_widget_css' );
-
-	// HOOKABLE:
-	$widget_css = apply_filters( 'wsl_render_auth_widget_alter_widget_css', $widget_css, $redirect_to );
-
-	// show the custom widget css if not empty
-	if( ! empty( $widget_css ) )
-	{
+	/**
+	 * Options page callback
+	 */
+	public function create_admin_page() {
 		?>
-
-		<style type="text/css">
-			<?php
-				echo
-					preg_replace(
-						array( '%/\*(?:(?!\*/).)*\*/%s', '/\s{2,}/', "/\s*([;{}])[\r\n\t\s]/", '/\\s*;\\s*/', '/\\s*{\\s*/', '/;?\\s*}\\s*/' ),
-							array( '', ' ', '$1', ';', '{', '}' ),
-								$widget_css );
-			?>
-		</style>
-		<?php
-	}
-	?>
-
-	<div class="wp-social-login-widget">
-
-		<div class="wp-social-login-connect-with">Login with:</div>
-
-		<div class="wp-social-login-provider-list">
-			<a rel="nofollow" href="<?php echo add_query_arg( 'action', 'shibboleth', wp_login_url() ); ?>" title="Login with Northeastern University Universal Login" class="wp-social-login-provider wp-social-login-provider-shibboleth" data-provider="shibboleth">
-				<img alt="shibboleth" title="Login with Northeastern University Universal Login" src="" />
-			</a>
-			<?php
-			// Widget::Authentication display
-			$wsl_settings_use_popup = get_option( 'wsl_settings_use_popup' );
-
-			// if a user is visiting using a mobile device, WSL will fall back to more in page
-			$wsl_settings_use_popup = function_exists( 'wp_is_mobile' ) ? wp_is_mobile() ? 2 : $wsl_settings_use_popup : $wsl_settings_use_popup;
-
-			$no_idp_used = true;
-
-			// display provider icons
-			foreach( $WORDPRESS_SOCIAL_LOGIN_PROVIDERS_CONFIG AS $item )
-			{
-				$provider_id    = isset( $item["provider_id"]    ) ? $item["provider_id"]   : '' ;
-				$provider_name  = isset( $item["provider_name"]  ) ? $item["provider_name"] : '' ;
-
-				// provider enabled?
-				if( get_option( 'wsl_settings_' . $provider_id . '_enabled' ) )
-				{
-					// restrict the enabled providers list
-					if( isset( $args['enable_providers'] ) )
-					{
-						$enable_providers = explode( '|', $args['enable_providers'] ); // might add a couple of pico seconds
-
-						if( ! in_array( strtolower( $provider_id ), $enable_providers ) )
-						{
-							continue;
-						}
-					}
-
-					// build authentication url
-					$authenticate_url = $authenticate_base_url . "provider=" . $provider_id . "&redirect_to=" . urlencode( $redirect_to );
-
-					// http://codex.wordpress.org/Function_Reference/esc_url
-					$authenticate_url = esc_url( $authenticate_url );
-
-					// in case, Widget::Authentication display is set to 'popup', then we overwrite 'authenticate_url'
-					// > /assets/js/connect.js will take care of the rest
-					if( $wsl_settings_use_popup == 1 &&  $auth_mode != 'test' )
-					{
-						$authenticate_url= "javascript:void(0);";
-					}
-
-					// HOOKABLE: allow user to rebuilt the auth url
-					$authenticate_url = apply_filters( 'wsl_render_auth_widget_alter_authenticate_url', $authenticate_url, $provider_id, $auth_mode, $redirect_to, $wsl_settings_use_popup );
-
-					// HOOKABLE: allow use of other icon sets
-					$provider_icon_markup = apply_filters( 'wsl_render_auth_widget_alter_provider_icon_markup', $provider_id, $provider_name, $authenticate_url );
-
-					if( $provider_icon_markup != $provider_id )
-					{
-						echo $provider_icon_markup;
-					}
-					else
-					{
-						?>
-
-						<a rel="nofollow" href="<?php echo $authenticate_url; ?>" title="<?php echo sprintf( _wsl__("Login with %s", 'wordpress-social-login'), $provider_name ) ?>" class="wp-social-login-provider wp-social-login-provider-<?php echo strtolower( $provider_id ); ?>" data-provider="<?php echo $provider_id ?>">
-							<?php if( $social_icon_set == 'none' ){ echo apply_filters( 'wsl_render_auth_widget_alter_provider_name', $provider_name ); } else { ?><img alt="<?php echo $provider_name ?>" title="<?php echo sprintf( _wsl__("Login with %s", 'wordpress-social-login'), $provider_name ) ?>" src="<?php echo $assets_base_url . strtolower( $provider_id ) . '.png' ?>" /><?php } ?>
-
-						</a>
-						<?php
-					}
-
-					$no_idp_used = false;
-				}
-			}
-
-			// no provider enabled?
-			if( $no_idp_used )
-			{
-				?>
-				<p style="background-color: #FFFFE0;border:1px solid #E6DB55;padding:5px;">
-					<?php _wsl_e( '<strong>WordPress Social Login is not configured yet</strong>.<br />Please navigate to <strong>Settings &gt; WP Social Login</strong> to configure this plugin.<br />For more information, refer to the <a rel="nofollow" href="http://miled.github.io/wordpress-social-login">online user guide</a>.', 'wordpress-social-login') ?>.
-				</p>
-				<style>#wp-social-login-connect-with{display:none;}</style>
+		<div class="wrap">
+			<h1>NEU Social Settings</h1>
+			<form method="post" action="options.php">
 				<?php
-			}
-			?>
-
+				// This prints out all hidden setting fields
+				settings_fields( 'neu_social_whitelist' );
+				do_settings_sections( 'neu-social-whitelist' );
+				submit_button();
+				?>
+			</form>
 		</div>
-
-		<div class="wp-social-login-widget-clearing"></div>
-
-	</div>
-
-	<?php
-	// provide popup url for hybridauth callback
-	if( $wsl_settings_use_popup == 1 )
-	{
-		?>
-		<input type="hidden" id="wsl_popup_base_url" value="<?php echo esc_url( $authenticate_base_url ) ?>" />
-		<input type="hidden" id="wsl_login_form_uri" value="<?php echo esc_url( site_url( 'wp-login.php', 'login_post' ) ); ?>" />
-
 		<?php
 	}
 
-	// HOOKABLE: This action runs just after generating the WSL Widget.
-	do_action( 'wsl_render_auth_widget_end' );
-	?>
-	<!-- wsl_render_auth_widget -->
+	/**
+	 * Register and add settings
+	 */
+	public function page_init() {
+		register_setting(
+			'neu_social_whitelist', // Option group
+			'neu_social', // Option name
+			array( $this, 'sanitize' ) // Sanitize
+		);
 
-	<?php
-	// Display WSL debugging area bellow the widget.
-	// wsl_display_dev_mode_debugging_area(); // ! keep this line commented unless you know what you are doing :)
+		add_settings_section(
+			'setting_section_id', // ID
+			'Whitelist', // Title
+			array( $this, 'print_section_info' ), // Callback
+			'neu-social-whitelist' // Page
+		);
 
-	echo ob_get_clean();
-}
+		add_settings_field(
+			'whitelist', // ID
+			'Whitelist', // Title
+			array( $this, 'whitelist_callback' ), // Callback
+			'neu-social-whitelist', // Page
+			'setting_section_id' // Section
+		);
 
-/**
- * Adds a section to the social login plugin settings for whitelist
- */
- function northeastern_social_login_whitelist_settings() {
-	 ?>
-	 <div class="stuffbox">
-		 <h3>
-			 <label><?php _wsl_e("User Account Whitelist", 'northeastern') ?></label>
-		 </h3>
-		 <div class="inside">
-			 <p>
-				 <?php _wsl_e('This will allow you to whitelist social accounts that are able to create accounts on the website.', 'wordpress-social-login') ?>.
-			 </p>
-			 <form method="post" id="wsl_whitelist_form" action="options-general.php?page=wordpress-social-login&wslp=tools" enctype="multipart/form-data">
-				 <h4>Upload CSV</h4>
-				 <p>Upload a CSV of Google Account Email Addresses or Twitter Usernames to bulk add to the whitelist. Select if you are whitelisting Twitter usernames or Google Accounts. Format the CSV with the username/email in the first column with no header. All other columns will be ignored.</p>
-				 <select name="csvprovider">
-					 <option value="twitter">Twitter</option>
-					 <option value="google">Google</option>
-				 </select>
-				 <br>
-				 <input type="file"
-				        id="whitelistcsv" name="whitelistcsv"
-				        accept="text/csv">
-				 <br><br>
-				 <h4>Add Twitter Whitelist Entries</h4>
-				 <p>Add one username per line. Do not use @ signs on the twitter username.</p>
-				 <textarea id="whitelist-twitter" name="whitelist-twitter" rows="10" cols="50"></textarea>
-				 <br>
+	}
 
-				 <br><br>
-				 <h4>Add Google Whitelist Entries</h4>
-				 <p>Add one email per line.</p>
-				 <textarea id="whitelist-entries" name="whitelist-google" rows="10" cols="50"></textarea>
-				 <br>
-				 <input type="hidden" name="do" value="whitelist" />
-				 <?php wp_nonce_field(); ?>
-
-				 <input type="submit" class="button-primary" value="Add To Whitelist" />
-			 </form>
-		 </div>
-	 </div>
-	 <?php
- }
-
-/**
- * Create the database table for the whitelist
- */
-function northeastern_create_whitelist_db_table() {
-	global $wpdb;
-	$charset_collate = $wpdb->get_charset_collate();
-
-	$sql = "CREATE TABLE `{$wpdb->prefix}wsl_login_whitelist` (
-	  id int(11) NOT NULL AUTO_INCREMENT,
-	  provider varchar(50) NOT NULL,
-	  identifier varchar(255) NOT NULL,
-	  UNIQUE KEY id (id),
-	  KEY provider (provider)
-	) $charset_collate;";
-
-	require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
-	dbDelta($sql);
-}
-
-/**
- * Hook into the wsl repair action to create db table
- */
-function northeastern_wsl_do_repair() {
-
-	northeastern_create_whitelist_db_table();
-
-}
-
-/**
- * Add a whiltelist entry to the database
- */
-function northeastern_add_whitelist_entry( $provider, $identifier ) {
-	global $wpdb;
-
-	$wpdb->insert(
-		$wpdb->prefix . 'wsl_login_whitelist',
-		array(
-			'provider'   => $provider,
-			'identifier' => $identifier,
-		),
-		array(
-			'%s',
-			'%s',
-		)
-
-	);
-}
-
-/**
- * Get a whitelist entry
- */
-function northeastern_get_whitelist_entry( $provider, $identifier ) {
-	global $wpdb;
-
-	$sql = "SELECT * FROM {$wpdb->prefix}wsl_login_whitelist WHERE provider = %s AND identifier = %s";
-	$entry = $wpdb->get_row( $wpdb->prepare( $sql, $provider, $identifier ) );
-
-	return $entry;
-}
-
-/**
- * Process the whitelist database job
- */
-function northeastern_wsl_do_whitelist_job() {
-
-	if( isset( $_REQUEST['_wpnonce'] ) && wp_verify_nonce( $_REQUEST['_wpnonce'] ) ) {
-
-		if( isset( $_REQUEST['do'] ) && 'whitelist' === $_REQUEST['do'] ) {
-
-			// Process Twitter Whitelist Textarea
-			$twitter_text = ( isset( $_REQUEST['whitelist-twitter'] ) && $_REQUEST['whitelist-twitter'] ) ? $_REQUEST['whitelist-twitter'] : null;
-			if ( ! is_null( $twitter_text ) ) {
-				$usernames = preg_split( '/\r\n|\r|\n/', $twitter_text );
-				$usernames = array_unique( $usernames );
-				foreach ( $usernames as $username ) {
-					$username = str_replace( '@', '', $username );
-					northeastern_add_whitelist_entry( 'twitter', sanitize_text_field( $username ) );
-				}
-			}
-
-			// Process Google Whitelist Textarea
-			$google_text = ( isset( $_REQUEST['whitelist-google'] ) && $_REQUEST['whitelist-google'] ) ? $_REQUEST['whitelist-google'] : null;
-			if ( ! is_null( $google_text ) ) {
-				$emails = preg_split( '/\r\n|\r|\n/', $google_text );
-				$emails = array_unique( $emails );
-				foreach ( $emails as $email ) {
-					northeastern_add_whitelist_entry( 'google', sanitize_text_field( $email ) );
-				}
-			}
-
-
-			// Process CSV Upload
-			if ( isset( $_FILES['whitelistcsv'] ) && $_FILES['whitelistcsv'] ) {
-				$files = $_FILES['whitelistcsv'];
-				if ( $files['name'] ) {
-					if ( isset( $files['error'] ) && $files['error'] ) {
-						?>
-						<div class="notice notice-error is-dismissible">
-							<p>Error uploading CSV File</p>
-						</div>
-						<?php
-						return;
-					}
-
-					$open = fopen( $files['tmp_name'], 'r' );
-
-					if ( $open !== false ) {
-
-						while ( ( $data = fgetcsv( $open, 0, ',' ) ) !== false ) {
-							if ( isset( $data[0] ) && $data[0] ) {
-								$identifier = $data[0];
-								if ( 'twitter' === $_REQUEST['csvprovider'] ) {
-									$identifier = str_replace( '@', '', $data );
-								}
-								northeastern_add_whitelist_entry( sanitize_text_field( $_REQUEST['csvprovider'] ), sanitize_text_field( $identifier ) );
-							}
-						}
-
-					} else {
-						?>
-						<div class="notice notice-error is-dismissible">
-							<p>Error reading CSV File</p>
-						</div>
-						<?php
-						return;
-					}
-				}
-			}
-
-			?>
-			<div class="notice notice-success is-dismissible">
-				<p>Finished added entries to whitelist!</p>
-			</div>
-			<?php
-			
+	/**
+	 * Sanitize each setting field as needed
+	 *
+	 * @param array $input Contains all settings fields as array keys
+	 *
+	 * @return array
+	 */
+	public function sanitize( $input ) {
+		$new_input = array();
+		if ( isset( $input['whitelist'] ) ) {
+			$new_input['whitelist'] = esc_textarea( $input['whitelist'] );
 		}
-		
-	}
-	
-}
 
-/**
- * Get Twitter Username from URL
- */
-function northeastern_get_twitter_username_from_url( $url ) {
-	if ( preg_match( "/^https?:\/\/(www\.)?twitter\.com\/(#!\/)?(?<name>[^\/]+)(\/\w+)*$/", $url, $regs ) ) {
-		return $regs['name'];
-	}
-	return false;
-}
-
-/**
- * Check the social login against the whitelist
- */
-function northeastern_wsl_whitelist_check( $provider, $redirect_to, $hybridauth_user_profile ) {
-
-	$provider = strtolower( $provider );
-
-	if ( 'twitter' === $provider ) {
-		$url = $hybridauth_user_profile->profileURL;
-		$identifier = northeastern_get_twitter_username_from_url( $url );
-	} elseif ( 'google' === $provider ) {
-		$identifier = $hybridauth_user_profile->email;
-	} else {
-		$identifier = null;
+		return $new_input;
 	}
 
-	if ( is_null( $identifier ) ) {
-		wp_die( 'Something went wrong here. No provider/username found.' );
+	/**
+	 * Print the Section text
+	 */
+	public function print_section_info() {
+		print '';
 	}
 
-	if ( ! northeastern_get_whitelist_entry( $provider, $identifier ) ) {
+	/**
+	 * Get the settings option array and print one of its values
+	 */
+	public function whitelist_callback() {
 		?>
-		<!DOCTYPE html>
-			<head>
-				<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-				<title><?php echo get_bloginfo('name'); ?></title>
-				<style type="text/css">
-					html, body {
-						height: 100%;
-						margin: 0;
-						padding: 0;
-					}
-					body {
-						background: none repeat scroll 0 0 #f1f1f1;
-						font-size: 14px;
-						color: #444;
-						font-family: "Open Sans",sans-serif;
-					}
-					hr {
-						border-color: #eeeeee;
-						border-style: none none solid;
-						border-width: 0 0 1px;
-						margin: 2px 0 0;
-					}
-					h4 {
-						font-size: 14px;
-						margin-bottom: 10px;
-					}
-					#login {
-						width: 616px;
-						margin: auto;
-						padding: 114px 0 0;
-					}
-					#login-panel {
-						background: none repeat scroll 0 0 #fff;
-						box-shadow: 0 1px 3px rgba(0, 0, 0, 0.13);
-						margin: 2em auto;
-						box-sizing: border-box;
-						display: inline-block;
-						padding: 70px 0 15px;
-						position: relative;
-						text-align: center;
-						width: 100%;
-					}
-					.back-to-home {
-						font-size: 12px;
-						margin-top: -18px;
-					}
-					.back-to-home a {
-						color: #999;
-						text-decoration: none;
-					}
-				</style>
-
-			</head>
-			<body>
-				<div id="login">
-					<div id="login-panel">
-						<h4>Access Denied</h4>
-						<hr />
-						<p>Sorry, this account is not authorized to access the network. Please contact the administrator if you think you should have access.</p>
-					</div>
-
-					<p class="back-to-home">
-						<a href="<?php echo home_url(); ?>">&#8592; <?php printf( _wsl__( "Back to %s", 'wordpress-social-login' ), get_bloginfo('name') ); ?></a>
-					</p>
-				</div>
-
-				<?php
-				// Development mode on?
-				if( get_option( 'wsl_settings_development_mode_enabled' ) )
-				{
-					wsl_display_dev_mode_debugging_area();
-				}
-				?>
-			</body>
-		</html>
+		<p>
+			<label for="whitelist">Enter the email addresses to allow to sign up through the social login. One email per line.</label>
+		</p>
+		<p>
+			<textarea name="neu_social[whitelist]" rows="10" cols="50" id="whitelist" class="large-text code"><?php echo isset( $this->options['whitelist'] ) ? esc_attr( $this->options['whitelist'] ) : ''; ?></textarea>
+		</p>
 		<?php
 	}
 
+	/**
+	 * @param                       $retval
+	 * @param NextendSocialProvider $provider
+	 *
+	 * @return mixed
+	 * @author Tanner Moushey
+	 */
+	public function check_social_whitelist( $retval, $provider ) {
+		if ( ! $email = $provider->getAuthUserData( 'email' ) ) {
+			return false;
+		}
+
+		if ( ! $whitelist = array_map( 'trim', explode( PHP_EOL, $this->options['whitelist'] ) ) ) {
+			return false;
+		}
+
+		if ( ! in_array( $email, $whitelist ) ) {
+			return false;
+		}
+
+		return $retval;
+	}
+
+	public function social_login_footer() {
+		?>
+		<style>
+			#nsl-custom-login-form-main #shibboleth_login a {
+				background: #333;
+				padding: 12px;
+				display: block;
+				text-align: center;
+				color: white;
+				border-radius: 3px;
+			}
+			#nsl-custom-login-form-main div.nsl-container-block {
+				max-width: none;
+			}
+		</style>
+
+		<script>
+          jQuery('#shibboleth_login').find('a').text('Northeastern University Login');
+
+          if (jQuery('#nsl-custom-login-form-main').length) {
+            jQuery('#nsl-custom-login-form-main').prepend(jQuery('#shibboleth_login'));
+          }
+		</script>
+		<?php
+	}
 }
+
+$neu_social_signon = new NEU_Social_Signon();
