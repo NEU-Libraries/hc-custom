@@ -18,6 +18,7 @@ class NEU_Social_Signon {
 		add_action( 'admin_init', array( $this, 'page_init' ) );
 		add_action( 'login_footer', array( $this, 'social_login_footer' ) );
 		add_filter( 'nsl_is_register_allowed', [ $this, 'check_social_whitelist' ], 10, 2 );
+		add_action( 'nsl_login', [ $this, 'add_to_networks' ] );
 
 		$this->options = get_option( 'neu_social' );
 	}
@@ -166,6 +167,21 @@ class NEU_Social_Signon {
           }
 		</script>
 		<?php
+	}
+
+	/**
+	 * Add social members to network
+	 *
+	 * @param $user_id
+	 *
+	 * @author Tanner Moushey
+	 */
+	public function add_to_network( $user_id ) {
+		$types = [ 'next', 'nc' ];
+
+		foreach( $types as $type ) {
+			bp_set_member_type( $user_id, $type, true );
+		}
 	}
 }
 
