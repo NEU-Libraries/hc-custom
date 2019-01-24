@@ -177,7 +177,7 @@ class NEU_Social_Signon {
 	 * @author Tanner Moushey
 	 */
 	public function add_to_network( $user_id ) {
-		$types = [ 'next', 'nc' ];
+		$types = [ 'next' ];
 
 		foreach( $types as $type ) {
 			bp_set_member_type( $user_id, $type, true );
