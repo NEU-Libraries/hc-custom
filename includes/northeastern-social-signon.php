@@ -147,20 +147,22 @@ class NEU_Social_Signon {
 		?>
 		<style>
 			#nsl-custom-login-form-main #shibboleth_login a {
-				background: #333;
-				padding: 12px;
 				display: block;
 				text-align: center;
 				color: white;
 				border-radius: 3px;
+				text-decoration: none;
+				font-family: Helvetica, Arial, sans-serif;
 			}
-			#nsl-custom-login-form-main div.nsl-container-block {
-				max-width: none;
+			#nsl-custom-login-form-main div.nsl-container-block,
+			div.nsl-container-block .nsl-container-buttons a {
+				max-width: none !important;
 			}
 		</style>
 
 		<script>
-          jQuery('#shibboleth_login').find('a').text('Northeastern University Login');
+          jQuery('#shibboleth_login').find('a').html(
+            '<span class="nsl-button nsl-button-default nsl-button-google" data-skin="uniform" style="background-color:#333;"><span class="nsl-button-label-container">Continue with <b>NEU</b></span></span>');
 
           if (jQuery('#nsl-custom-login-form-main .nsl-container').length) {
             jQuery('#nsl-custom-login-form-main .nsl-container').prepend(jQuery('#shibboleth_login'));
